@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Editar Usuarios</title>
+  <link rel="stylesheet" href="estilo.css">
+  <script type="module" src="firebase.js"></script>
+</head>
+<body>
+
+<nav class="nav">
+  <a href="index.html">Inicio</a>
+  <a href="libros.html">Libros</a>
+  <a href="usuarios.html">Usuarios</a>
+  <a href="devolver.html">Devolver</a>
+  <a href="editarLibros.html">Editar Libros</a>
+  <a href="editarUsuarios.html" class="active">Editar Usuarios</a>
+</nav>
+
+<div class="container">
+  <h1>Editar Usuarios</h1>
+  <div class="table-wrap">
+    <table id="tabla">
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Correo</th>
+          <th>Libros prestados</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div id="msgEditar" class="msg"></div>
+</div>
+
+<script type="module">
+  import { db, ref, get, update, remove, onValue } from "./firebase.js";
+
+  const body = document.querySelector("#tabla tbody");
+  const msg = document.getElementById("msgEditar");
+
+  onValue(ref(db, "usuarios"), render);
+
+  function render() {
+    get(ref(db, "usuarios")).then(async snap => {
+      body.innerHTML = "";
+      if (!snap.exists()) return;
+      const usuarios = snap.val();
+      for (const [id, u] of Object.entries(usuarios)) {
+        const librosPrestados = u.librosPrestados ? Object.keys(u.librosPrestados).filter(k => u.librosPrestados[k]) : [];
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${u.nombre}</td>
+          <td>${u.correo}</td>
+          <td>${librosPrestados.length}</td>
+          <td>
+            <button class="btn btn-sm" data-edit="${id}">Editar</button>
+            <button class="btn btn-sm btn-danger" data-del="${id}">Eliminar</button>
+          </td>
+        `;
+        body.appendChild(tr);
+      }
+      attachHandlers();
+    });
+  }
+
+  function attachHandlers() {
+    body.querySelectorAll("[data-edit]").forEach(b => {
+      b.addEventListener("click", async () => {
+        const id = b.getAttribute("data-edit");
+        const nuevoNombre = prompt("Nuevo nombre:");
+        if (!nuevoNombre?.trim()) return;
+        try {
+          await update(ref(db, "usuarios/" + id), { nombre: nuevoNombre.trim() });
+          showMsg("Usuario actualizado.", "ok");
+        } catch (err) {
+          console.error(err);
+          showMsg("Error al actualizar usuario.", "error");
+        }
+      });
+    });
+    body.querySelectorAll("[data-del]").forEach(b => {
+      b.addEventListener("click", async () => {
+        const id = b.getAttribute("data-del");
+        if (!confirm("¿Eliminar usuario? Se perderán sus registros.")) return;
+        try {
+          await remove(ref(db, "usuarios/" + id));
+          showMsg("Usuario eliminado.", "ok");
+        } catch (err) {
+          console.error(err);
+          showMsg("Error al eliminar usuario.", "error");
+        }
+      });
+    });
+  }
+
+  function showMsg(text, type) {
+    msg.textContent = text;
+    msg.className = `msg ${type}`;
+    setTimeout(() => { msg.textContent = ""; msg.className = "msg"; }, 2500);
+  }
+</script>
+
+</body>
+</html>

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Devolver</title>
+  <link rel="stylesheet" href="estilo.css">
+  <script type="module" src="firebase.js"></script>
+</head>
+<body>
+
+<nav class="nav">
+  <a href="index.html">Inicio</a>
+  <a href="libros.html">Libros</a>
+  <a href="usuarios.html">Usuarios</a>
+  <a href="devolver.html" class="active">Devolver</a>
+  <a href="editarLibros.html">Editar Libros</a>
+  <a href="editarUsuarios.html">Editar Usuarios</a>
+</nav>
+
+<div class="container">
+  <h1>Devolución de libros</h1>
+
+  <label for="selUsuario">Usuario</label>
+  <select id="selUsuario" aria-label="Seleccionar usuario"></select>
+
+  <label for="selPrestamo">Libro prestado</label>
+  <select id="selPrestamo" aria-label="Seleccionar libro a devolver"></select>
+
+  <button id="btnDevolver" class="btn">Devolver Libro</button>
+  <div id="msgDevolver" class="msg"></div>
+
+  <h2>Historial del usuario</h2>
+  <div class="table-wrap">
+    <table id="tablaPrestamos">
+      <thead>
+        <tr>
+          <th>Libro</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<script type="module">
+  import { db, ref, get, update, onValue } from "./firebase.js";
+
+  const selUsuario = document.getElementById("selUsuario");
+  const selPrestamo = document.getElementById("selPrestamo");
+  const msg = document.getElementById("msgDevolver");
+  const tablaBody = document.querySelector("#tablaPrestamos tbody");
+
+  onValue(ref(db, "usuarios"), snap => {
+    selUsuario.innerHTML = "";
+    if (!snap.exists()) return;
+    Object.entries(snap.val()).forEach(([id, u]) => {
+      const op = document.createElement("option");
+      op.value = id;
+      op.textContent = `${u.nombre} (${u.correo})`;
+      selUsuario.appendChild(op);
+    });
+    loadUserLoans();
+  });
+
+  selUsuario.addEventListener("change", loadUserLoans);
+
+  async function loadUserLoans() {
+    const uid = selUsuario.value;
+    selPrestamo.innerHTML = "";
+    tablaBody.innerHTML = "";
+    if (!uid) return;
+
+    const librosSnap = await get(ref(db, "libros"));
+    const userSnap = await get(ref(db, `usuarios/${uid}/librosPrestados`));
+    const prestados = (userSnap.exists() ? userSnap.val() : {}) || {};
+    if (!librosSnap.exists()) return;
+
+    Object.entries(librosSnap.val()).forEach(([id, libro]) => {
+      const isPrestadoPorUsuario = prestados[id];
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${libro.titulo} — ${libro.autor}</td>
+        <td>${libro.disponible ? "Disponible" : (libro.prestadoA === uid ? "Prestado por usuario" : "Prestado por otro")}</td>
+      `;
+      tablaBody.appendChild(tr);
+
+      if (!libro.disponible && libro.prestadoA === uid) {
+        const op = document.createElement("option");
+        op.value = id;
+        op.textContent = `${libro.titulo} — ${libro.autor}`;
+        selPrestamo.appendChild(op);
+      }
+    });
+  }
+
+  document.getElementById("btnDevolver").addEventListener("click", async () => {
+    const uid = selUsuario.value;
+    const libroId = selPrestamo.value;
+    if (!uid || !libroId) return showMsg("Selecciona usuario y libro.", "error");
+    const btn = document.getElementById("btnDevolver");
+    btn.disabled = true;
+    try {
+      await update(ref(db, `libros/${libroId}`), { disponible: true, prestadoA: null });
+      await update(ref(db, `usuarios/${uid}/librosPrestados`), { [libroId]: null });
+      showMsg("Devolución registrada.", "ok");
+      loadUserLoans();
+    } catch (err) {
+      console.error(err);
+      showMsg("Error al devolver.", "error");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  function showMsg(text, type) {
+    msg.textContent = text;
+    msg.className = `msg ${type}`;
+    setTimeout(() => { msg.textContent = ""; msg.className = "msg"; }, 2500);
+  }
+</script>
+
+</body>
+</html>

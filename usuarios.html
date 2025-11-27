@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Usuarios</title>
+  <link rel="stylesheet" href="estilo.css">
+  <script type="module" src="firebase.js"></script>
+</head>
+<body>
+
+<nav class="nav">
+  <a href="index.html">Inicio</a>
+  <a href="libros.html">Libros</a>
+  <a href="usuarios.html" class="active">Usuarios</a>
+  <a href="devolver.html">Devolver</a>
+  <a href="editarLibros.html">Editar Libros</a>
+  <a href="editarUsuarios.html">Editar Usuarios</a>
+</nav>
+
+<div class="container">
+  <h1>Gestión de Usuarios</h1>
+
+  <form id="formUsuario" class="form" novalidate>
+    <label for="nombre">Nombre</label>
+    <input id="nombre" type="text" required aria-required="true" placeholder="Nombre completo">
+    <label for="correo">Correo</label>
+    <input id="correo" type="email" required aria-required="true" placeholder="correo@universidad.edu">
+    <button id="btnAgregarUsuario" type="submit" class="btn">Agregar Usuario</button>
+    <div id="msgUsuario" class="msg"></div>
+  </form>
+
+  <h2>Prestar Libros</h2>
+
+  <div class="grid-2">
+    <div>
+      <label for="selectUsuario">Usuario</label>
+      <select id="selectUsuario" aria-label="Seleccionar usuario"></select>
+    </div>
+    <div>
+      <label for="selectLibro">Libro disponible</label>
+      <select id="selectLibro" aria-label="Seleccionar libro disponible"></select>
+    </div>
+  </div>
+
+  <button id="btnPrestar" class="btn">Prestar Libro</button>
+  <div id="msgPrestamo" class="msg"></div>
+</div>
+
+<script type="module">
+  import { db, ref, push, set, get, update, onValue } from "./firebase.js";
+
+  const form = document.getElementById("formUsuario");
+  const msgUsuario = document.getElementById("msgUsuario");
+  const msgPrestamo = document.getElementById("msgPrestamo");
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const nombre = document.getElementById("nombre").value.trim();
+    const correo = document.getElementById("correo").value.trim();
+    if (!nombre || !correo) return showMsg(msgUsuario, "Completa nombre y correo.", "error");
+    form.querySelector("button").disabled = true;
+    try {
+      const snap = await get(ref(db, "usuarios"));
+      const dup = snap.exists() && Object.values(snap.val()).some(u => u.correo?.toLowerCase() === correo.toLowerCase());
+      if (dup) {
+        showMsg(msgUsuario, "El correo ya está registrado.", "warn");
+      } else {
+        const userRef = push(ref(db, "usuarios"));
+        await set(userRef, { nombre, correo, librosPrestados: {} });
+        form.reset();
+        showMsg(msgUsuario, "Usuario agregado.", "ok");
+      }
+    } catch (err) {
+      console.error(err);
+      showMsg(msgUsuario, "Error al agregar usuario.", "error");
+    } finally {
+      form.querySelector("button").disabled = false;
+    }
+  });
+
+  document.getElementById("btnPrestar").addEventListener("click", async () => {
+    const uid = document.getElementById("selectUsuario").value;
+    const libroId = document.getElementById("selectLibro").value;
+    if (!uid || !libroId) return showMsg(msgPrestamo, "Selecciona usuario y libro.", "error");
+    const btn = document.getElementById("btnPrestar");
+    btn.disabled = true;
+    try {
+      await update(ref(db, "libros/" + libroId), { disponible: false, prestadoA: uid });
+      await update(ref(db, "usuarios/" + uid + "/librosPrestados"), { [libroId]: true });
+      showMsg(msgPrestamo, "Préstamo registrado.", "ok");
+    } catch (err) {
+      console.error(err);
+      showMsg(msgPrestamo, "Error al registrar préstamo.", "error");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  onValue(ref(db, "usuarios"), snap => {
+    const select = document.getElementById("selectUsuario");
+    select.innerHTML = "";
+    if (!snap.exists()) return;
+    Object.entries(snap.val()).forEach(([id, u]) => {
+      const op = document.createElement("option");
+      op.value = id;
+      op.textContent = `${u.nombre} (${u.correo})`;
+      select.appendChild(op);
+    });
+  });
+
+  onValue(ref(db, "libros"), snap => {
+    const select = document.getElementById("selectLibro");
+    select.innerHTML = "";
+    if (!snap.exists()) return;
+    Object.entries(snap.val()).forEach(([id, libro]) => {
+      if (libro.disponible) {
+        const op = document.createElement("option");
+        op.value = id;
+        op.textContent = `${libro.titulo} — ${libro.autor}`;
+        select.appendChild(op);
+      }
+    });
+  });
+
+  function showMsg(el, text, type) {
+    el.textContent = text;
+    el.className = `msg ${type}`;
+    setTimeout(() => { el.textContent = ""; el.className = "msg"; }, 2500);
+  }
+</script>
+
+</body>
+</html>
